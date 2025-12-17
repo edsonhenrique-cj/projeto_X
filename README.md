@@ -1,5 +1,5 @@
 # Tank Shooting Game
-# A volta do bug.
+# A volta do bug @Litch.
 A browser-based tank shooting game inspired by Asteroids, featuring car-like tank controls and progressive enemy fragmentation.
 
 ## How to Play
