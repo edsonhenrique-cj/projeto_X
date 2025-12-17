@@ -125,11 +125,95 @@ class Enemy {
     }
 }
 
+class Star {
+    constructor() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.floor(Math.random() * 5) + 1; // 1 to 5 pixels
+        this.brightness = Math.random() * 0.8 + 0.2; // 0.2 to 1.0 for opacity
+    }
+
+    draw() {
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.brightness})`;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+    }
+}
+
+class Explosion {
+    constructor(x, y, size) {
+        this.x = x;
+        this.y = y;
+        this.initialSize = size;
+        this.life = 60; // frames
+        this.maxLife = 60;
+    }
+
+    update() {
+        this.life--;
+    }
+
+    draw() {
+        const progress = 1 - (this.life / this.maxLife);
+        const radius = this.initialSize * (0.5 + progress * 2); // grows over time
+
+        // Colors: yellow -> orange -> red
+        let color;
+        if (progress < 0.33) {
+            // Yellow to orange
+            const t = progress / 0.33;
+            color = `rgba(255, ${Math.floor(255 * (1 - t * 0.5))}, 0, ${1 - progress})`;
+        } else if (progress < 0.66) {
+            // Orange to red
+            const t = (progress - 0.33) / 0.33;
+            color = `rgba(255, ${Math.floor(165 * (1 - t))}, 0, ${1 - progress})`;
+        } else {
+            // Red
+            const t = (progress - 0.66) / 0.34;
+            color = `rgba(255, ${Math.floor(0 * (1 - t))}, 0, ${1 - progress})`;
+        }
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+class Spark {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 4;
+        this.vy = (Math.random() - 0.5) * 4;
+        this.life = 30; // frames
+        this.size = Math.floor(Math.random() * 2) + 2; // 2 or 3 pixels
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life--;
+        this.vx *= 0.95; // friction
+        this.vy *= 0.95;
+    }
+
+    draw() {
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.life / 30})`;
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+    }
+}
+
 class Game {
     constructor() {
         this.tank = new Tank(canvas.width/2, canvas.height/2);
         this.projectiles = [];
         this.enemies = [];
+        this.stars = [];
+        this.explosions = [];
+        this.sparks = [];
+        this.shakeX = 0;
+        this.shakeY = 0;
+        this.shakeIntensity = 0;
         this.keys = {};
         this.score = 0;
         this.gameOver = false;
@@ -137,6 +221,9 @@ class Game {
     }
 
     init() {
+        for (let i = 0; i < 100; i++) {
+            this.stars.push(new Star());
+        }
         for (let i = 0; i < 5; i++) {
             this.enemies.push(new Enemy());
         }
@@ -162,6 +249,9 @@ class Game {
     shoot() {
         if (this.gameOver) return;
         this.projectiles.push(new Projectile(this.tank.x, this.tank.y, this.tank.angle));
+        // Recoil
+        this.tank.vx -= Math.cos(this.tank.angle) * 0.5;
+        this.tank.vy -= Math.sin(this.tank.angle) * 0.5;
     }
 
     update() {
@@ -170,7 +260,15 @@ class Game {
         this.projectiles.forEach(p => p.update());
         this.projectiles = this.projectiles.filter(p => p.life > 0);
         this.enemies.forEach(e => e.update());
+        this.explosions.forEach(exp => exp.update());
+        this.explosions = this.explosions.filter(exp => exp.life > 0);
+        this.sparks.forEach(sp => sp.update());
+        this.sparks = this.sparks.filter(sp => sp.life > 0);
         this.checkCollisions();
+        // Update shake
+        this.shakeX = (Math.random() - 0.5) * this.shakeIntensity;
+        this.shakeY = (Math.random() - 0.5) * this.shakeIntensity;
+        this.shakeIntensity *= 0.9;
     }
 
     checkCollisions() {
@@ -179,6 +277,11 @@ class Game {
                 if (this.collide(p, e)) {
                     this.projectiles.splice(pi, 1);
                     this.enemies.splice(ei, 1);
+                    this.explosions.push(new Explosion(e.x, e.y, e.size));
+                    for (let i = 0; i < 8; i++) {
+                        this.sparks.push(new Spark(e.x + (Math.random() - 0.5) * e.size, e.y + (Math.random() - 0.5) * e.size));
+                    }
+                    this.shakeIntensity = Math.max(this.shakeIntensity, e.size / 5);
                     this.score += Math.floor(50 / e.size) * 3; // Smaller enemies give more points, 3x multiplier
                     if (e.size > 10) {
                         for (let i = 0; i < 2; i++) {
@@ -209,9 +312,15 @@ class Game {
 
     draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(this.shakeX, this.shakeY);
+        this.stars.forEach(s => s.draw());
         this.tank.draw();
         this.projectiles.forEach(p => p.draw());
         this.enemies.forEach(e => e.draw());
+        this.explosions.forEach(exp => exp.draw());
+        this.sparks.forEach(sp => sp.draw());
+        ctx.restore();
         document.getElementById('score').textContent = 'Score: ' + this.score;
     }
 
@@ -219,6 +328,10 @@ class Game {
         this.tank = new Tank(canvas.width/2, canvas.height/2);
         this.projectiles = [];
         this.enemies = [];
+        this.stars = [];
+        this.explosions = [];
+        this.sparks = [];
+        this.shakeIntensity = 0;
         this.score = 0;
         this.gameOver = false;
         document.getElementById('gameOver').style.display = 'none';
